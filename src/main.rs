@@ -351,7 +351,7 @@ impl SimpleComponent for App {
                         "type".to_string(),
                         match thumb.kind {
                             Kind::Window => "Window",
-                            Kind::Display => "Display",
+                            Kind::Display => "Monitor",
                         }
                         .to_string(),
                     ),
