@@ -3,12 +3,14 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::OnceLock;
 
 use clap::{Parser, ValueEnum};
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use relm4::gtk::{self, gdk, glib, pango, prelude::*};
 use relm4::prelude::*;
+use serde_json::Value;
 use strfmt::strfmt;
 
 mod capture;
@@ -46,6 +48,10 @@ struct Cli {
     /// {type}, {id}, {caption}, {app_id}.
     #[arg(short = 'f', long, default_value = "{type}: {id}")]
     output_format: String,
+
+    /// A command to run, that returns extra template fields as a json object keyed by foreign_toplevel_id
+    #[arg(short = 'e', long = "extra-cmd", env = "SNIB_EXTRA_CMD")]
+    extra_cmd: Option<String>,
 }
 
 fn cli() -> &'static Cli {
@@ -94,6 +100,7 @@ struct Thumb {
     haystack: String,
     size: [u32; 2],
     rgba: Vec<u8>,
+    extra: Extra,
 }
 
 fn user_css_path() -> Option<PathBuf> {
@@ -224,7 +231,8 @@ impl SimpleComponent for App {
 
         let keys = gtk::EventControllerKey::new();
         keys.connect_key_pressed(glib::clone!(
-            #[strong] sender,
+            #[strong]
+            sender,
             move |ctrl, key, _code, _mods| {
                 match key {
                     gdk::Key::Escape => {
@@ -273,17 +281,20 @@ impl SimpleComponent for App {
         search.set_hexpand(true);
 
         search.connect_changed(glib::clone!(
-            #[strong] sender,
+            #[strong]
+            sender,
             move |e| sender.input(Msg::Query(e.text().to_string()))
         ));
         search.connect_activate(glib::clone!(
-            #[strong] sender,
+            #[strong]
+            sender,
             move |_| sender.input(Msg::ActivateFirst)
         ));
 
         let esc = gtk::EventControllerKey::new();
         esc.connect_key_pressed(glib::clone!(
-            #[strong] sender,
+            #[strong]
+            sender,
             move |_, key, _code, _mods| match key {
                 gdk::Key::Escape => {
                     sender.input(Msg::CloseSearch);
@@ -319,9 +330,8 @@ impl SimpleComponent for App {
             };
             let strip = gtk::Box::new(orientation, 0);
 
-            for thumb in thumbs {
-                let [w, h] = thumb.size;
-                let bytes = glib::Bytes::from_owned(thumb.rgba);
+            for Thumb { kind, identifier, app_id, caption, haystack, size: [w, h], rgba, extra } in thumbs {
+                let bytes = glib::Bytes::from_owned(rgba);
                 let texture = gdk::MemoryTexture::new(
                     w as i32,
                     h as i32,
@@ -334,42 +344,39 @@ impl SimpleComponent for App {
                 picture.add_css_class("thumb-image");
                 picture.set_can_shrink(false);
 
-                let caption = gtk::Label::new(Some(&thumb.caption));
-                caption.add_css_class("caption");
-                caption.set_ellipsize(pango::EllipsizeMode::End);
-                caption.set_max_width_chars(30);
+                let label = gtk::Label::new(Some(&caption));
+                label.add_css_class("caption");
+                label.set_ellipsize(pango::EllipsizeMode::End);
+                label.set_max_width_chars(30);
 
                 let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
-                cell.append(&caption);
+                cell.append(&label);
                 cell.append(&picture);
-
-                let vars = HashMap::from([
-                    ("id".to_string(), thumb.identifier.clone()),
-                    ("caption".to_string(), thumb.caption.clone()),
-                    ("app_id".to_string(), thumb.app_id.to_string()),
-                    (
-                        "type".to_string(),
-                        match thumb.kind {
+                
+                let vars: HashMap<_, _> = extra.into_iter().chain([
+                    ("type".into(), match kind {
                             Kind::Window => "Window",
                             Kind::Display => "Monitor",
-                        }
-                        .to_string(),
-                    ),
-                ]);
-                let line = strfmt(&template, &vars).unwrap();
+                        }.to_string()),
+                    ("id".into(), identifier),
+                    ("caption".into(), caption),
+                    ("app_id".into(), app_id),
+                ]).collect();
+                let line = strfmt(&template, &vars).unwrap_or("".to_string());
 
                 let button = gtk::Button::new();
                 button.add_css_class("thumb");
                 button.set_child(Some(&cell));
                 button.set_valign(gtk::Align::Start);
                 button.connect_clicked(glib::clone!(
-                    #[strong] sender,
+                    #[strong]
+                    sender,
                     move |_| sender.input(Msg::Pick(line.clone()))
                 ));
 
                 entries.push(Entry {
-                    kind: thumb.kind,
-                    haystack: thumb.haystack,
+                    kind: kind,
+                    haystack: haystack,
                     button: button.clone(),
                 });
                 strip.append(&button);
@@ -441,23 +448,72 @@ impl SimpleComponent for App {
     }
 }
 
+type Extra = Vec<(String, String)>;
+type Extras = HashMap<String, Extra>;
+
+fn fetch_extra(cmd: &str) -> Extras {
+    let output = Command::new("sh")
+        .args(["-c", cmd])
+        .output()
+        .expect("failed to execute process");
+
+    if !output.status.success() {
+        eprintln!("{}", String::from_utf8_lossy(&output.stderr));
+        return Extras::new();
+    }
+
+    let raw: HashMap<String, HashMap<String, Value>> =
+        serde_json::from_slice(&output.stdout).unwrap();
+
+    raw.into_iter()
+        .map(|(k, v)| {
+            let sub: Extra = v.into_iter()
+                .map(|(k2, v2)| (k2, v2.to_string()))
+                .collect();
+            (k, sub)
+        })
+        .collect()
+}
+
+impl std::str::FromStr for Kind {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, ()> {
+        match s {
+            "Window" => Ok(Kind::Window),
+            "Display" => Ok(Kind::Display),
+            _ => Err(()),
+        }
+    }
+}
+
 fn main() {
     let cli = cli();
+    let extras = cli.extra_cmd.as_deref().map(fetch_extra).unwrap_or_default();
 
-    let thumbs: Vec<Thumb> = capture::capture_thumbnails(cli.thumb_width, cli.edge.horizontal_bar())
-        .into_iter()
-        .map(|c| Thumb {
-            kind: if c.kind == "Window" { Kind::Window } else { Kind::Display },
-            app_id: c.app_id,
-            identifier: c.identifier,
-            caption: c.caption,
-            haystack: c.haystack,
-            size: [c.width, c.height],
-            rgba: c.rgba,
-        })
-        .collect();
+    let thumbs: Vec<Thumb> =
+        capture::capture_thumbnails(cli.thumb_width, cli.edge.horizontal_bar())
+            .into_iter()
+            .map(|c| {
+                let extra = extras.get(&c.identifier).cloned();
+                Thumb {
+                    kind: if c.kind == "Window" {
+                        Kind::Window
+                    } else {
+                        Kind::Display
+                    },
+                    app_id: c.app_id,
+                    identifier: c.identifier,
+                    caption: c.caption,
+                    haystack: c.haystack,
+                    size: [c.width, c.height],
+                    rgba: c.rgba,
+                    extra: extra.unwrap_or(Extra::new()),
+                }
+            })
+            .collect();
 
     let app = RelmApp::new("com.zelane.snib");
     app.allow_multiple_instances(true);
-    app.with_args(Vec::new()).run::<App>((cli.output_format.clone(), thumbs));
+    app.with_args(Vec::new())
+        .run::<App>((cli.output_format.clone(), thumbs));
 }
