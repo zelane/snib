@@ -4,7 +4,8 @@
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use clap::{Parser, ValueEnum};
+use clap::{Parser, ValueEnum, Subcommand};
+use clap_complete::{Shell};
 
 #[derive(Parser)]
 #[command(
@@ -36,17 +37,27 @@ pub struct Cli {
     pub style: Option<PathBuf>,
 
     /// Line printed to stdout for the chosen source. Placeholders:
-    /// {type}, {id}, {caption}, {app_id}.
+    /// {type}, {id}, {title}, {app_id}.
     #[arg(short = 'f', long, default_value = "{type}: {id}")]
     pub output_format: String,
 
     /// A command to run, that returns extra template fields as a json object keyed by foreign_toplevel_id
     #[arg(short = 'c', long = "extra-cmd", env = "SNIB_EXTRA_CMD")]
     pub extra_cmd: Option<String>,
+
+    #[command(subcommand)]
+    pub command: Option<Commands>,
 }
 
-/// Parsed once and shared: `SimpleComponent::init_root` takes no arguments but
-/// still needs the anchor edge.
+#[derive(Subcommand)]
+pub enum Commands {
+    Completions {
+        #[arg(value_enum)]
+        shell: Shell,
+    },
+}
+
+
 pub fn cli() -> &'static Cli {
     static CLI: OnceLock<Cli> = OnceLock::new();
     CLI.get_or_init(Cli::parse)

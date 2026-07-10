@@ -143,7 +143,7 @@ struct Job {
     kind: Kind,
     identifier: String,
     app_id: String,
-    caption: String,
+    title: String,
     haystack: String,
     source: ExtImageCaptureSourceV1,
 }
@@ -188,7 +188,7 @@ pub fn capture_thumbnails(max: u32, fit_height: bool) -> Vec<Source> {
             let Some(identifier) = info.identifier.clone() else {
                 continue;
             };
-            let caption = info
+            let title = info
                 .title
                 .clone()
                 .filter(|s| !s.is_empty())
@@ -204,7 +204,7 @@ pub fn capture_thumbnails(max: u32, fit_height: bool) -> Vec<Source> {
                 kind: Kind::Window,
                 identifier,
                 app_id: info.app_id.clone().unwrap_or_default(),
-                caption,
+                title,
                 haystack,
                 source: mgr.create_source(&info.handle, &qh, ()),
             });
@@ -217,7 +217,7 @@ pub fn capture_thumbnails(max: u32, fit_height: bool) -> Vec<Source> {
             let Some(name) = info.name.clone() else {
                 continue;
             };
-            let caption = match &info.model {
+            let title = match &info.model {
                 Some(m) => format!("{name} — {m}"),
                 None => name.clone(),
             };
@@ -225,8 +225,8 @@ pub fn capture_thumbnails(max: u32, fit_height: bool) -> Vec<Source> {
                 kind: Kind::Display,
                 identifier: name,
                 app_id: String::new(),
-                haystack: caption.to_lowercase(),
-                caption,
+                haystack: title.to_lowercase(),
+                title,
                 source: mgr.create_source(&info.output, &qh, ()),
             });
         }
@@ -245,7 +245,7 @@ pub fn capture_thumbnails(max: u32, fit_height: bool) -> Vec<Source> {
                 kind: job.kind,
                 identifier: job.identifier,
                 app_id: job.app_id,
-                caption: job.caption,
+                title: job.title,
                 haystack: job.haystack,
                 size: [w, h],
                 rgba,

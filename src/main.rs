@@ -1,7 +1,11 @@
 //! snib — a Catppuccin-themed thumbnail window/display chooser for
 //! xdg-desktop-portal-wlr, drawn as an edge-anchored layer-shell bar.
 
+use std::io;
+
 use relm4::RelmApp;
+use clap_complete::{generate};
+use clap::CommandFactory;
 
 mod capture;
 mod cli;
@@ -10,6 +14,12 @@ mod ui;
 
 fn main() {
     let cli = cli::cli();
+    if let Some(cli::Commands::Completions { shell }) = cli.command {
+        let mut cmd = cli::Cli::command();
+        let name = cmd.get_name().to_string();
+        generate(shell, &mut cmd, name, &mut io::stdout());
+        return;
+    }
     let mut extras = cli
         .extra_cmd
         .as_deref()

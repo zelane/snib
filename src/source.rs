@@ -18,17 +18,15 @@ pub struct Source {
     pub kind: Kind,
     pub identifier: String,
     pub app_id: String,
-    pub caption: String,
+    pub title: String,
     /// Lowercased title + app_id, matched against the search query.
     pub haystack: String,
     pub size: [u32; 2],
     pub rgba: Vec<u8>,
-    /// Populated after capture, from `--extra-cmd`.
     pub extra: Extra,
 }
 
 impl Source {
-    /// The line printed to stdout when this source is picked.
     pub fn render_line(&self, template: &str) -> String {
         let vars: HashMap<_, _> = self
             .extra
@@ -37,7 +35,7 @@ impl Source {
             .chain([
                 ("type".into(), self.kind.label().to_string()),
                 ("id".into(), self.identifier.clone()),
-                ("caption".into(), self.caption.clone()),
+                ("title".into(), self.title.clone()),
                 ("app_id".into(), self.app_id.clone()),
             ])
             .collect();

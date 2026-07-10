@@ -100,11 +100,11 @@ pub enum Msg {
 
 // --- widget builders ---
 
-/// One thumbnail cell: caption above the picture, wrapped in a focusable
+/// One thumbnail cell: title above the picture, wrapped in a focusable
 /// button that prints the source's rendered line when clicked.
 fn thumb_button(source: Source, template: &str, sender: &ComponentSender<App>) -> Entry {
     let line = source.render_line(template);
-    let Source { kind, caption, haystack, size: [w, h], rgba, .. } = source;
+    let Source { kind, title, haystack, size: [w, h], rgba, .. } = source;
 
     let bytes = glib::Bytes::from_owned(rgba);
     let texture = gdk::MemoryTexture::new(
@@ -119,8 +119,8 @@ fn thumb_button(source: Source, template: &str, sender: &ComponentSender<App>) -
     picture.add_css_class("thumb-image");
     picture.set_can_shrink(false);
 
-    let label = gtk::Label::new(Some(&caption));
-    label.add_css_class("caption");
+    let label = gtk::Label::new(Some(&title));
+    label.add_css_class("title");
     label.set_ellipsize(pango::EllipsizeMode::End);
     label.set_max_width_chars(30);
 
