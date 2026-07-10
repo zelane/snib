@@ -9,6 +9,7 @@ use clap::CommandFactory;
 
 mod capture;
 mod cli;
+mod config;
 mod source;
 mod ui;
 

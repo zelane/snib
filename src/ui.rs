@@ -1,6 +1,3 @@
-//! The layer-shell picker bar: a title, a hidden search row, and a scrolling
-//! strip of thumbnail buttons.
-
 use std::path::PathBuf;
 
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
@@ -8,6 +5,7 @@ use relm4::gtk::{self, gdk, glib, pango, prelude::*};
 use relm4::prelude::*;
 
 use crate::cli::{cli, Kind, Side};
+use crate::config::{config, parse_key};
 use crate::source::Source;
 
 // --- styling ---
@@ -19,8 +17,7 @@ fn user_css_path() -> Option<PathBuf> {
         .map(|base| base.join("snib/style.css"))
 }
 
-/// Built-in theme first, then the user's file, then `--style` — later
-/// providers win.
+/// Priority is --style, user config, default
 fn load_css(display: &gdk::Display) {
     let base = gtk::CssProvider::new();
     base.load_from_data(include_str!("../style.css"));
@@ -44,7 +41,6 @@ fn load_css(display: &gdk::Display) {
 
 // --- app ---
 
-/// A thumbnail button plus what we need to filter it.
 struct Entry {
     kind: Kind,
     haystack: String,
@@ -100,8 +96,6 @@ pub enum Msg {
 
 // --- widget builders ---
 
-/// One thumbnail cell: title above the picture, wrapped in a focusable
-/// button that prints the source's rendered line when clicked.
 fn thumb_button(source: Source, template: &str, sender: &ComponentSender<App>) -> Entry {
     let line = source.render_line(template);
     let Source { kind, title, haystack, size: [w, h], rgba, .. } = source;
@@ -141,7 +135,6 @@ fn thumb_button(source: Source, template: &str, sender: &ComponentSender<App>) -
     Entry { kind, haystack, button }
 }
 
-/// Scrolls along the bar's long axis only.
 fn scroller(child: &impl IsA<gtk::Widget>, horizontal: bool) -> gtk::ScrolledWindow {
     let viewport = gtk::Viewport::builder()
         .scroll_to_focus(true)
@@ -166,42 +159,40 @@ fn scroller(child: &impl IsA<gtk::Widget>, horizontal: bool) -> gtk::ScrolledWin
 }
 
 fn key_controller(sender: &ComponentSender<App>) -> gtk::EventControllerKey {
+    let kb = &config().keybinds;
+    let cancel = parse_key(&kb.cancel);
+    let search = parse_key(&kb.search);
+    let windows = parse_key(&kb.windows);
+    let displays = parse_key(&kb.displays);
+    let next = parse_key(&kb.next);
+    let prev = parse_key(&kb.prev);
+
     let keys = gtk::EventControllerKey::new();
     keys.connect_key_pressed(glib::clone!(
         #[strong]
         sender,
         move |ctrl, key, _code, _mods| {
-            match key {
-                gdk::Key::Escape => {
-                    sender.input(Msg::Cancel);
-                    glib::Propagation::Stop
+            let key = Some(key);
+            if key == cancel {
+                sender.input(Msg::Cancel);
+            } else if key == search {
+                sender.input(Msg::OpenSearch);
+            } else if key == windows {
+                sender.input(Msg::SetMode(Kind::Window));
+            } else if key == displays {
+                sender.input(Msg::SetMode(Kind::Display));
+            } else if key == next {
+                if let Some(w) = ctrl.widget() {
+                    w.child_focus(gtk::DirectionType::TabForward);
                 }
-                gdk::Key::slash => {
-                    sender.input(Msg::OpenSearch);
-                    glib::Propagation::Stop
+            } else if key == prev {
+                if let Some(w) = ctrl.widget() {
+                    w.child_focus(gtk::DirectionType::TabBackward);
                 }
-                gdk::Key::w => {
-                    sender.input(Msg::SetMode(Kind::Window));
-                    glib::Propagation::Stop
-                }
-                gdk::Key::d => {
-                    sender.input(Msg::SetMode(Kind::Display));
-                    glib::Propagation::Stop
-                }
-                gdk::Key::l => {
-                    if let Some(w) = ctrl.widget() {
-                        w.child_focus(gtk::DirectionType::TabForward);
-                    }
-                    glib::Propagation::Stop
-                }
-                gdk::Key::h => {
-                    if let Some(w) = ctrl.widget() {
-                        w.child_focus(gtk::DirectionType::TabBackward);
-                    }
-                    glib::Propagation::Stop
-                }
-                _ => glib::Propagation::Proceed,
+            } else {
+                return glib::Propagation::Proceed;
             }
+            glib::Propagation::Stop
         }
     ));
     keys

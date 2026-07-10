@@ -62,6 +62,9 @@ Window: <toplevel-identifier>
 | `Enter`    | Confirm the focused/first match         |
 | `Esc`      | Close search, or cancel and exit        |
 
+The `w`, `d`, `h`/`l`, `/`, and cancel keys are rebindable — see
+[Keybindings](#keybindings-1) under Configuration.
+
 ## Integrating with xdg-desktop-portal-wlr
 
 `xdg-desktop-portal-wlr` runs a chooser command and reads the selected output's
@@ -105,6 +108,23 @@ The `--output-format` string supports the placeholders `{type}`, `{id}`,
 (see below).
 
 Set `SNIB_DEBUG=1` to print capture diagnostics to stderr.
+
+### Keybindings
+
+Navigation keys can be remapped in `~/.config/snib/config.toml`. See
+[`config.example.toml`](config.example.toml) for the full set of defaults.
+
+```toml
+[keybinds]
+cancel   = "Escape"  # cancel and exit
+search   = "slash"   # open the search row
+windows  = "w"       # show the window list
+displays = "d"       # show the display list
+next     = "l"       # move the selection forward
+prev     = "h"       # move the selection backward
+```
+
+[gdk-keys]: https://gitlab.gnome.org/GNOME/gtk/-/blob/main/gdk/gdkkeysyms.h
 
 ## Extra template fields
 
