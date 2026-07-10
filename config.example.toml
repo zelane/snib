@@ -1,0 +1,11 @@
+# snib configuration — copy to ~/.config/snib/config.toml
+
+[keybinds]
+# Key names are GDK key names (e.g. "Escape", "slash", "w", "Left", "Page_Up").
+# A single literal character such as "/" also works.
+cancel   = "Escape"  # cancel and exit
+search   = "slash"   # open the search row
+windows  = "w"       # show the window list
+displays = "d"       # show the display list
+next     = "l"       # move the selection forward
+prev     = "h"       # move the selection backward

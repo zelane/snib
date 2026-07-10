@@ -54,7 +54,7 @@ window.snib {
     border: 2px solid alpha(@surface1, 1);
 }
 
-.snib label.caption {
+.snib label.title {
     color: @subtext1;
     font-size: 18px;
     margin-bottom: .5em;
@@ -80,9 +80,9 @@ window.snib {
     filter: grayscale(0);
 }
 
-.snib button.thumb:hover label.caption,
-.snib button.thumb:focus label.caption,
-.snib button.thumb:focus-visible label.caption {
+.snib button.thumb:hover label.title,
+.snib button.thumb:focus label.title,
+.snib button.thumb:focus-visible label.title {
     color: @accent;
 }
 

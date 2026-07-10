@@ -62,6 +62,9 @@ Window: <toplevel-identifier>
 | `Enter`    | Confirm the focused/first match         |
 | `Esc`      | Close search, or cancel and exit        |
 
+The `w`, `d`, `h`/`l`, `/`, and cancel keys are rebindable — see
+[Keybindings](#keybindings-1) under Configuration.
+
 ## Integrating with xdg-desktop-portal-wlr
 
 `xdg-desktop-portal-wlr` runs a chooser command and reads the selected output's
@@ -84,9 +87,6 @@ grim -o $(snib -m display -f "{id}") display.png
 
 # record the selected display
 wf-recorder -o $(snib -m display -f "{id}") -f recording.mp4
-
-# move focus to the selected app
-swaymsg [app_id=$(snib -m window -f "{app_id}")] focus
 ```
 
 ## Configuration
@@ -101,17 +101,70 @@ and override per-invocation.
 | `-w, --thumb-width <N>`  | `SNIB_THUMB_WIDTH`  | `320`          | Max thumbnail dimension in pixels (64–4096).        |
 | `-s, --style <PATH>`     | `SNIB_STYLE`        | —              | Extra stylesheet layered over the built-in theme.   |
 | `-f, --output-format <F>`| —                   | `{type}: {id}` | Line printed for the chosen source.                 |
+| `-c, --extra-cmd <CMD>`  | `SNIB_EXTRA_CMD`    | —              | Command whose JSON output adds extra template fields. |
 
 The `--output-format` string supports the placeholders `{type}`, `{id}`,
-`{caption}`, and `{app_id}`.
+`{title}`, and `{app_id}`, plus any extra fields provided by `--extra-cmd`
+(see below).
 
 Set `SNIB_DEBUG=1` to print capture diagnostics to stderr.
+
+### Keybindings
+
+Navigation keys can be remapped in `~/.config/snib/config.toml`. See
+[`config.example.toml`](config.example.toml) for the full set of defaults.
+
+```toml
+[keybinds]
+cancel   = "Escape"  # cancel and exit
+search   = "slash"   # open the search row
+windows  = "w"       # show the window list
+displays = "d"       # show the display list
+next     = "l"       # move the selection forward
+prev     = "h"       # move the selection backward
+```
+
+[gdk-keys]: https://gitlab.gnome.org/GNOME/gtk/-/blob/main/gdk/gdkkeysyms.h
+
+## Extra template fields
+
+To template on anything not provided by wayland itself, you can use `--extra-cmd`. `snib` runs the
+command once, parses its output, and merges the fields into every source's
+template, matched by foreign-toplevel identifier.
+
+The command must print JSON shaped as `{ "<identifier>": { "<field>": value } }`:
+
+```json
+{
+  "abc123": { "pid": 4242, "app_id": "firefox", "con_id": "97" }
+}
+```
+
+Each inner key becomes a placeholder for use with`--output-format`.
+
+The [`examples/`](examples/) directory has a ready-made [`sway-tree.jq`](examples/sway-tree.jq)
+that reshapes `swaymsg -t get_tree` into the expected form. Copy it alongside
+your other config:
+
+```sh
+mkdir -p ~/.config/snib/templates
+cp examples/sway-tree.jq ~/.config/snib/templates/
+```
+
+This opens up additional wm specific functionality such as:
+
+```sh
+# Switch focus to the selected ewindow
+swaymsg [con_id=$(snib -m window --extra-cmd="swaymsg -t get_tree | jq -f ~/.config/snib/templates/sway-tree.jq" -f "{con_id}")] focus
+
+# Kill the selected window process
+kill -9 $(snib -m window --extra-cmd="swaymsg -t get_tree | jq -f ~/.config/snib/templates/sway-tree.jq" -f "{pid}")
+```
 
 ## Theming
 
 The built-in [`style.css`](style.css) is compiled into the binary. To restyle,
-copy it and edit — the user file is loaded at a higher priority so its rules
-win:
+copy it and edit, the user file is loaded at a higher priority:
 
 ```sh
 mkdir -p ~/.config/snib

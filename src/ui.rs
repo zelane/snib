@@ -1,0 +1,363 @@
+use std::path::PathBuf;
+
+use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
+use relm4::gtk::{self, gdk, glib, pango, prelude::*};
+use relm4::prelude::*;
+
+use crate::cli::{cli, Kind, Side};
+use crate::config::{config, parse_key};
+use crate::source::Source;
+
+// --- styling ---
+
+fn user_css_path() -> Option<PathBuf> {
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+        .map(|base| base.join("snib/style.css"))
+}
+
+/// Priority is --style, user config, default
+fn load_css(display: &gdk::Display) {
+    let base = gtk::CssProvider::new();
+    base.load_from_data(include_str!("../style.css"));
+    gtk::style_context_add_provider_for_display(
+        display,
+        &base,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+
+    let extra = cli().style.clone().or_else(user_css_path);
+    if let Some(path) = extra.filter(|p| p.exists()) {
+        let user = gtk::CssProvider::new();
+        user.load_from_path(&path);
+        gtk::style_context_add_provider_for_display(
+            display,
+            &user,
+            gtk::STYLE_PROVIDER_PRIORITY_USER,
+        );
+    }
+}
+
+// --- app ---
+
+struct Entry {
+    kind: Kind,
+    haystack: String,
+    button: gtk::Button,
+}
+
+pub struct App {
+    mode: Kind,
+    query: String,
+    entries: Vec<Entry>,
+    search: gtk::Text,
+    search_row: gtk::Box,
+    title: gtk::Label,
+}
+
+impl App {
+    fn matches(&self, e: &Entry) -> bool {
+        e.kind == self.mode && (self.query.is_empty() || e.haystack.contains(&self.query))
+    }
+
+    fn apply_filter(&self) {
+        for e in &self.entries {
+            e.button.set_visible(self.matches(e));
+        }
+    }
+
+    fn focus_first(&self) {
+        if let Some(e) = self.entries.iter().find(|e| self.matches(e)) {
+            e.button.grab_focus();
+        }
+    }
+
+    fn set_mode(&mut self, mode: Kind) {
+        self.mode = mode;
+        self.title.set_text(mode.title());
+        self.apply_filter();
+        if !self.search_row.get_visible() {
+            self.focus_first();
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum Msg {
+    Pick(String),
+    Cancel,
+    SetMode(Kind),
+    OpenSearch,
+    Query(String),
+    CloseSearch,
+    ActivateFirst,
+}
+
+// --- widget builders ---
+
+fn thumb_button(source: Source, template: &str, sender: &ComponentSender<App>) -> Entry {
+    let line = source.render_line(template);
+    let Source { kind, title, haystack, size: [w, h], rgba, .. } = source;
+
+    let bytes = glib::Bytes::from_owned(rgba);
+    let texture = gdk::MemoryTexture::new(
+        w as i32,
+        h as i32,
+        gdk::MemoryFormat::R8g8b8a8,
+        &bytes,
+        (w * 4) as usize,
+    );
+
+    let picture = gtk::Picture::for_paintable(&texture);
+    picture.add_css_class("thumb-image");
+    picture.set_can_shrink(false);
+
+    let label = gtk::Label::new(Some(&title));
+    label.add_css_class("title");
+    label.set_ellipsize(pango::EllipsizeMode::End);
+    label.set_max_width_chars(30);
+
+    let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    cell.append(&label);
+    cell.append(&picture);
+
+    let button = gtk::Button::new();
+    button.add_css_class("thumb");
+    button.set_child(Some(&cell));
+    button.set_valign(gtk::Align::Start);
+    button.connect_clicked(glib::clone!(
+        #[strong]
+        sender,
+        move |_| sender.input(Msg::Pick(line.clone()))
+    ));
+
+    Entry { kind, haystack, button }
+}
+
+fn scroller(child: &impl IsA<gtk::Widget>, horizontal: bool) -> gtk::ScrolledWindow {
+    let viewport = gtk::Viewport::builder()
+        .scroll_to_focus(true)
+        .child(child)
+        .build();
+
+    let scrolled = gtk::ScrolledWindow::builder().child(&viewport);
+    if horizontal {
+        scrolled
+            .hscrollbar_policy(gtk::PolicyType::Automatic)
+            .vscrollbar_policy(gtk::PolicyType::Never)
+            .propagate_natural_height(true)
+            .hexpand(true)
+    } else {
+        scrolled
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .vscrollbar_policy(gtk::PolicyType::Automatic)
+            .propagate_natural_width(true)
+            .vexpand(true)
+    }
+    .build()
+}
+
+fn key_controller(sender: &ComponentSender<App>) -> gtk::EventControllerKey {
+    let kb = &config().keybinds;
+    let cancel = parse_key(&kb.cancel);
+    let search = parse_key(&kb.search);
+    let windows = parse_key(&kb.windows);
+    let displays = parse_key(&kb.displays);
+    let next = parse_key(&kb.next);
+    let prev = parse_key(&kb.prev);
+
+    let keys = gtk::EventControllerKey::new();
+    keys.connect_key_pressed(glib::clone!(
+        #[strong]
+        sender,
+        move |ctrl, key, _code, _mods| {
+            let key = Some(key);
+            if key == cancel {
+                sender.input(Msg::Cancel);
+            } else if key == search {
+                sender.input(Msg::OpenSearch);
+            } else if key == windows {
+                sender.input(Msg::SetMode(Kind::Window));
+            } else if key == displays {
+                sender.input(Msg::SetMode(Kind::Display));
+            } else if key == next {
+                if let Some(w) = ctrl.widget() {
+                    w.child_focus(gtk::DirectionType::TabForward);
+                }
+            } else if key == prev {
+                if let Some(w) = ctrl.widget() {
+                    w.child_focus(gtk::DirectionType::TabBackward);
+                }
+            } else {
+                return glib::Propagation::Proceed;
+            }
+            glib::Propagation::Stop
+        }
+    ));
+    keys
+}
+
+/// The `/`-prefixed search row, hidden until `/` is pressed.
+fn search_row(sender: &ComponentSender<App>) -> (gtk::Box, gtk::Text) {
+    let search = gtk::Text::new();
+    search.add_css_class("search-field");
+    search.set_hexpand(true);
+
+    search.connect_changed(glib::clone!(
+        #[strong]
+        sender,
+        move |e| sender.input(Msg::Query(e.text().to_string()))
+    ));
+    search.connect_activate(glib::clone!(
+        #[strong]
+        sender,
+        move |_| sender.input(Msg::ActivateFirst)
+    ));
+
+    let esc = gtk::EventControllerKey::new();
+    esc.connect_key_pressed(glib::clone!(
+        #[strong]
+        sender,
+        move |_, key, _code, _mods| match key {
+            gdk::Key::Escape => {
+                sender.input(Msg::CloseSearch);
+                glib::Propagation::Stop
+            }
+            _ => glib::Propagation::Proceed,
+        }
+    ));
+    search.add_controller(esc);
+
+    let prompt = gtk::Label::new(Some("/"));
+    prompt.add_css_class("search-prompt");
+
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    row.add_css_class("search");
+    row.set_visible(false);
+    row.append(&prompt);
+    row.append(&search);
+
+    (row, search)
+}
+
+impl SimpleComponent for App {
+    type Init = (String, Vec<Source>);
+    type Input = Msg;
+    type Output = ();
+    type Root = gtk::Window;
+    type Widgets = ();
+
+    fn init_root() -> Self::Root {
+        let window = gtk::Window::builder().css_classes(["snib"]).build();
+        let side = cli().edge;
+
+        window.init_layer_shell();
+        window.set_layer(Layer::Overlay);
+        window.set_keyboard_mode(KeyboardMode::Exclusive);
+        window.add_css_class(side.css_class());
+
+        let (edge, span_a, span_b) = match side {
+            Side::Bottom => (Edge::Bottom, Edge::Left, Edge::Right),
+            Side::Top => (Edge::Top, Edge::Left, Edge::Right),
+            Side::Left => (Edge::Left, Edge::Top, Edge::Bottom),
+            Side::Right => (Edge::Right, Edge::Top, Edge::Bottom),
+        };
+
+        window.set_anchor(edge, true);
+        window.set_anchor(span_a, true);
+        window.set_anchor(span_b, true);
+
+        window
+    }
+
+    fn init(
+        args: Self::Init,
+        root: Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
+        load_css(&WidgetExt::display(&root));
+
+        let (template, sources) = args;
+        let horizontal = cli().edge.horizontal_bar();
+
+        root.add_controller(key_controller(&sender));
+
+        let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
+
+        let title = gtk::Label::new(None);
+        title.add_css_class("title");
+        title.set_halign(gtk::Align::Start);
+        vbox.append(&title);
+
+        let (search_row, search) = search_row(&sender);
+        vbox.append(&search_row);
+
+        let entries: Vec<Entry> = if sources.is_empty() {
+            let empty = gtk::Label::new(Some("No capturable windows found."));
+            empty.add_css_class("empty");
+            vbox.append(&empty);
+            Vec::new()
+        } else {
+            let orientation = if horizontal {
+                gtk::Orientation::Horizontal
+            } else {
+                gtk::Orientation::Vertical
+            };
+            let strip = gtk::Box::new(orientation, 0);
+
+            let entries: Vec<Entry> = sources
+                .into_iter()
+                .map(|s| thumb_button(s, &template, &sender))
+                .collect();
+            for e in &entries {
+                strip.append(&e.button);
+            }
+
+            vbox.append(&scroller(&strip, horizontal));
+            entries
+        };
+        root.set_child(Some(&vbox));
+
+        let mut model = App {
+            mode: Kind::Window,
+            query: String::new(),
+            entries,
+            search,
+            search_row,
+            title,
+        };
+        model.set_mode(cli().mode);
+
+        ComponentParts { model, widgets: () }
+    }
+
+    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
+        match msg {
+            Msg::Pick(line) => {
+                println!("{line}");
+                std::process::exit(0);
+            }
+            Msg::Cancel => std::process::exit(0),
+            Msg::SetMode(mode) => self.set_mode(mode),
+            Msg::OpenSearch => {
+                self.search_row.set_visible(true);
+                self.search.grab_focus();
+            }
+            Msg::Query(q) => {
+                self.query = q.to_lowercase();
+                self.apply_filter();
+            }
+            Msg::CloseSearch => {
+                self.search.set_text("");
+                self.search_row.set_visible(false);
+                self.query.clear();
+                self.apply_filter();
+                self.focus_first();
+            }
+            Msg::ActivateFirst => {
+                self.focus_first();
+            }
+        }
+    }
+}
