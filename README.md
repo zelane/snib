@@ -169,12 +169,12 @@ copy it and edit, the user file is loaded at a higher priority:
 ```sh
 mkdir -p ~/.config/snib
 cp style.css ~/.config/snib/style.css
+cp colors.css ~/.config/snib/colors.css
 ```
 
 `snib` loads, in increasing priority: the built-in theme, then
 `~/.config/snib/style.css` (or `$XDG_CONFIG_HOME/snib/style.css`), then any file
-passed via `--style`. The `@define-color` palette block at the top of the
-stylesheet is a convenient target for `matugen` / `pywal` templates.
+passed via `--style`.
 
 ## License
 
