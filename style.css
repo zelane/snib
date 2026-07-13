@@ -2,22 +2,14 @@
  *
  * This file is compiled into the binary as the default theme. To restyle,
  * copy it to ~/.config/snib/style.css and edit — the user file is
- * loaded at higher priority, so your rules win. This is also the matugen /
- * pywal templating target: point a template at the @define-color block.
+ * loaded at higher priority, so your rules win.
+ *
+ * The palette lives in colors.css, imported below. Keep colors.css next to
+ * this file; it is the matugen / pywal / noctalia templating target. When you
+ * copy style.css into ~/.config/snib/, copy colors.css alongside it.
  */
 
-/* ---- palette (Catppuccin Mocha) ---- */
-@define-color base      #1e1e2e;
-@define-color mantle    #181825;
-@define-color crust     #11111b;
-@define-color surface0  #313244;
-@define-color surface1  #45475a;
-@define-color surface2  #585b70;
-@define-color overlay0  #6c7086;
-@define-color text      #cdd6f4;
-@define-color subtext1  #bac2de;
-@define-color subtext0  #a6adc8;
-@define-color accent    #cba6f7;
+@import url("colors.css");
 
 /* ---- window ---- */
 window.snib {
@@ -26,7 +18,7 @@ window.snib {
     padding: 1em 3em;
 }
 
-.snib .title {
+.snib .heading {
     color: @text;
     font-weight: 600;
     font-size: 0;
@@ -60,6 +52,7 @@ window.snib {
     margin-bottom: .5em;
     border-bottom: 3px solid transparent;
     background-color: darker(@base);
+    font-weight: 500;
 }
 
 

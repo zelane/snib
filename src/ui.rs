@@ -286,7 +286,7 @@ impl SimpleComponent for App {
         let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
         let title = gtk::Label::new(None);
-        title.add_css_class("title");
+        title.add_css_class("heading");
         title.set_halign(gtk::Align::Start);
         vbox.append(&title);
 

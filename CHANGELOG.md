@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Released]
+## [0.5.0] - 2026-07-14
+
+### Added
+- `examples/colors.css.noctalia`: a noctalia template for regenerating the palette from your active color scheme.
+
+### Changed
+- Moved the palette out of `style.css` into a separate `colors.css` (imported via `@import`), which is now the matugen / pywal / noctalia templating target. Copy `colors.css` alongside `style.css` when overriding in `~/.config/snib/`.
+- Renamed the title CSS class from `.title` to `.heading` (affects custom stylesheets targeting `.snib .title`).
+
+### Fixed
+- Corrected the crate `edition` from the invalid `2026` to `2024`.
 
 ## [0.4.0] - 2026-07-10
 
